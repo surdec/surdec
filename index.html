@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESP32-S3 RS485 Control Dashboard</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --amber: #f59e0b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      padding: 16px;
+      max-width: 980px;
+      margin: 0 auto;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 18px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h1 {
+      font-size: 1.2rem;
+      font-weight: 700;
+    }
+
+    .badges {
+      display: flex;
+      gap: 8px;
+    }
+
+    .badge {
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      background: #334155;
+      color: var(--muted);
+    }
+
+    .badge.ok {
+      background: rgba(34, 197, 94, 0.18);
+      color: var(--green);
+      border: 1px solid rgba(34, 197, 94, 0.4);
+    }
+
+    .badge.err {
+      background: rgba(239, 68, 68, 0.18);
+      color: var(--red);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .value {
+      font-size: 1.55rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .unit {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-left: 3px;
+    }
+
+    .sub-val {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    .chart-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .pills {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.85rem;
+    }
+
+    .pill-target {
+      color: var(--amber);
+      font-weight: 700;
+    }
+
+    .pill-rpm {
+      color: var(--green);
+      font-weight: 700;
+    }
+
+    .pill-pwm {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .btn-clear {
+      background: #334155;
+      color: var(--text);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      border: none;
+      cursor: pointer;
+    }
+
+    .chart-wrap {
+      position: relative;
+      height: 210px;
+      width: 100%;
+    }
+
+    .control-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+    }
+
+    .control-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .mode-switch {
+      display: flex;
+      background: #0f172a;
+      padding: 4px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .mode-btn {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: transparent;
+      color: var(--muted);
+    }
+
+    .mode-btn.active {
+      background: var(--accent);
+      color: #082f49;
+    }
+
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent);
+      height: 6px;
+      cursor: pointer;
+    }
+
+    .pwm-tag {
+      min-width: 95px;
+      text-align: right;
+      font-weight: 700;
+      color: var(--amber);
+    }
+
+    .btn-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    button.ctrl {
+      padding: 12px;
+      border: none;
+      border-radius: 10px;
+      font-size: 0.92rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    button.ctrl:active {
+      opacity: 0.8;
+    }
+
+    .btn-fwd {
+      background: var(--green);
+      color: #052e16;
+    }
+
+    .btn-rev {
+      background: var(--accent);
+      color: #082f49;
+    }
+
+    .btn-stop {
+      background: var(--red);
+      color: #fff;
+    }
+
+    .status-line {
+      margin-top: 12px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>ESP32-S3 RS485 — Giám Sát & Điều Khiển</h1>
+    <div class="badges">
+      <span id="cloudBadge" class="badge err">Cloud: Đang kết nối...</span>
+      <span id="rs485Badge" class="badge">RS485: Chờ dữ liệu</span>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">Điện áp (INA219)</div>
+      <div class="value"><span id="volt">--</span><span class="unit">V</span></div>
+    </div>
+    <div class="card">
+      <div class="label">Dòng tải (INA219)</div>
+      <div class="value"><span id="curr">--</span><span class="unit">mA</span></div>
+    </div>
+    <div class="card">
+      <div class="label">Tốc độ thực tế</div>
+      <div class="value" style="color: var(--green);"><span id="rpmCard">0.0</span><span class="unit">RPM</span></div>
+      <div class="sub-val">Encoder: <span id="enc">0</span> xung/s</div>
+    </div>
+    <div class="card">
+      <div class="label">Nhiệt độ (AHT10)</div>
+      <div class="value"><span id="temp">--</span><span class="unit">°C</span></div>
+    </div>
+    <div class="card">
+      <div class="label">Độ ẩm (AHT10)</div>
+      <div class="value"><span id="hum">--</span><span class="unit">%</span></div>
+    </div>
+    <div class="card">
+      <div class="label">Analog (GPIO 1)</div>
+      <div class="value"><span id="adc">--</span><span class="unit">V</span></div>
+    </div>
+  </div>
+
+  <!-- BIEU DO 1: TARGET RPM VS REAL RPM -->
+  <div class="chart-box">
+    <div class="chart-header">
+      <strong>1. Đồ thị Tốc độ: Target RPM vs Real RPM</strong>
+      <div class="pills">
+        <span class="pill-target">Target: <span id="targetRpmDisp">0.0</span> RPM</span>
+        <span>|</span>
+        <span class="pill-rpm">Real: <span id="realRpmDisp">0.0</span> RPM</span>
+        <button class="btn-clear" onclick="clearCharts()">Xóa đồ thị</button>
+      </div>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="rpmChart"></canvas>
+    </div>
+  </div>
+
+  <!-- BIEU DO 2: TARGET PWM VS REAL PWM -->
+  <div class="chart-box">
+    <div class="chart-header">
+      <strong>2. Đồ thị Xung điều khiển: Target PWM vs Real PWM</strong>
+      <div class="pills">
+        <span class="pill-target">Target: <span id="targetPwmDisp">0</span></span>
+        <span>|</span>
+        <span class="pill-pwm">Real: <span id="realPwmDisp">0</span></span>
+      </div>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="pwmChart"></canvas>
+    </div>
+  </div>
+
+  <div class="control-box">
+    <div class="control-header">
+      <strong>Điều khiển động cơ GA25 (BTS7960)</strong>
+      <div class="mode-switch">
+        <button id="btnModePwm" class="mode-btn active" onclick="setControlMode('PWM')">Chế độ PWM</button>
+        <button id="btnModePid" class="mode-btn" onclick="setControlMode('PID')">PID Tốc độ (RPM)</button>
+      </div>
+    </div>
+
+    <div class="slider-row">
+      <span id="sliderLabel" style="font-size: 0.85rem; color: var(--muted);">Mức PWM đặt:</span>
+      <input type="range" id="ctrlSlider" min="0" max="255" value="150" oninput="onSliderChange(this.value)" />
+      <span class="pwm-tag" id="sliderVal">150 / 255</span>
+    </div>
+
+    <div class="btn-group">
+      <button class="ctrl btn-fwd" onclick="sendMotor(1)">▶ Quay Thuận</button>
+      <button class="ctrl btn-stop" onclick="sendMotor(0)">■ Dừng Khẩn</button>
+      <button class="ctrl btn-rev" onclick="sendMotor(-1)">◀ Quay Ngược</button>
+    </div>
+
+    <div class="status-line" id="lastUpdate">Chưa nhận gói tin nào từ ESP32-S3 Main...</div>
+  </div>
+
+  <script>
+    const TOPIC_TELEMETRY = "tung_esp32s3_rs485/telemetry";
+    const TOPIC_CONTROL = "tung_esp32s3_rs485/control";
+    const MAX_POINTS = 50;
+
+    function createDualChart(canvasId, targetLabel, realLabel, realColor, realBg, yMin, yMax, step) {
+      const ctx = document.getElementById(canvasId).getContext("2d");
+      return new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: targetLabel,
+              data: [],
+              borderColor: "#f59e0b",
+              borderWidth: 2,
+              borderDash: [6, 4],
+              stepped: true,
+              pointRadius: 0,
+              fill: false
+            },
+            {
+              label: realLabel,
+              data: [],
+              borderColor: realColor,
+              backgroundColor: realBg,
+              borderWidth: 2.5,
+              tension: 0.25,
+              pointRadius: 1.5,
+              fill: true
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          interaction: { mode: "index", intersect: false },
+          scales: {
+            x: {
+              ticks: { color: "#94a3b8", maxTicksLimit: 8 },
+              grid: { color: "rgba(51, 65, 85, 0.4)" }
+            },
+            y: {
+              min: yMin,
+              max: yMax,
+              ticks: { color: "#94a3b8", stepSize: step },
+              grid: { color: "rgba(51, 65, 85, 0.5)" }
+            }
+          },
+          plugins: {
+            legend: { labels: { color: "#f8fafc", boxWidth: 16, font: { size: 12 } } }
+          }
+        }
+      });
+    }
+
+    const rpmChart = createDualChart(
+      "rpmChart", "Target RPM (Đặt)", "Real RPM (Thực tế)",
+      "#22c55e", "rgba(34, 197, 94, 0.14)", -320, 320, 80
+    );
+
+    const pwmChart = createDualChart(
+      "pwmChart", "Target PWM (Đặt)", "Real PWM (Thực tế)",
+      "#38bdf8", "rgba(56, 189, 248, 0.14)", -260, 260, 65
+    );
+
+    function appendChartData(chart, label, tVal, rVal) {
+      chart.data.labels.push(label);
+      chart.data.datasets[0].data.push(tVal);
+      chart.data.datasets[1].data.push(rVal);
+      if (chart.data.labels.length > MAX_POINTS) {
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
+        chart.data.datasets[1].data.shift();
+      }
+      chart.update();
+    }
+
+    function clearCharts() {
+      [rpmChart, pwmChart].forEach(c => {
+        c.data.labels = [];
+        c.data.datasets[0].data = [];
+        c.data.datasets[1].data = [];
+        c.update();
+      });
+    }
+
+    // Quan ly che do PWM / PID RPM
+    let uiMode = "PWM";
+    let currentDir = 0;
+
+    function setControlMode(mode) {
+      uiMode = mode;
+      document.getElementById("btnModePwm").classList.toggle("active", mode === "PWM");
+      document.getElementById("btnModePid").classList.toggle("active", mode === "PID");
+
+      const slider = document.getElementById("ctrlSlider");
+      if (mode === "PWM") {
+        document.getElementById("sliderLabel").textContent = "Mức PWM đặt:";
+        slider.max = 255;
+        slider.value = 150;
+        document.getElementById("sliderVal").textContent = "150 / 255";
+      } else {
+        document.getElementById("sliderLabel").textContent = "Tốc độ đặt:";
+        slider.max = 300;
+        slider.value = 150;
+        document.getElementById("sliderVal").textContent = "150 RPM";
+      }
+      if (currentDir !== 0) sendMotor(currentDir);
+    }
+
+    function onSliderChange(val) {
+      document.getElementById("sliderVal").textContent = (uiMode === "PWM") ? `${val} / 255` : `${val} RPM`;
+      if (currentDir !== 0) sendMotor(currentDir);
+    }
+
+    // Ket noi MQTT Cloud
+    const brokerUrl = (location.protocol === "https:")
+      ? "wss://broker.hivemq.com:8884/mqtt"
+      : "ws://broker.hivemq.com:8000/mqtt";
+
+    const client = mqtt.connect(brokerUrl, {
+      clientId: "WebDash_" + Math.random().toString(16).substring(2, 8),
+      clean: true,
+      reconnectPeriod: 2000
+    });
+
+    client.on("connect", () => {
+      const badge = document.getElementById("cloudBadge");
+      badge.textContent = "Cloud: Đã kết nối";
+      badge.className = "badge ok";
+      client.subscribe(TOPIC_TELEMETRY);
+    });
+
+    client.on("close", () => {
+      const badge = document.getElementById("cloudBadge");
+      badge.textContent = "Cloud: Mất kết nối";
+      badge.className = "badge err";
+    });
+
+    client.on("message", (topic, message) => {
+      if (topic !== TOPIC_TELEMETRY) return;
+      try {
+        const d = JSON.parse(message.toString());
+        document.getElementById("volt").textContent = Number(d.volt).toFixed(2);
+        document.getElementById("curr").textContent = Number(d.curr).toFixed(1);
+        document.getElementById("enc").textContent = d.enc;
+        document.getElementById("temp").textContent = Number(d.temp).toFixed(1);
+        document.getElementById("hum").textContent = Number(d.hum).toFixed(1);
+        document.getElementById("adc").textContent = Number(d.adc).toFixed(2);
+
+        const targetRpm = Number(d.target_rpm ?? 0);
+        const realRpm = Number(d.real_rpm ?? 0);
+        const targetPwm = Number(d.target_pwm ?? 0);
+        const realPwm = Number(d.real_pwm ?? 0);
+
+        document.getElementById("rpmCard").textContent = realRpm.toFixed(1);
+        document.getElementById("targetRpmDisp").textContent = targetRpm.toFixed(1);
+        document.getElementById("realRpmDisp").textContent = realRpm.toFixed(1);
+        document.getElementById("targetPwmDisp").textContent = targetPwm;
+        document.getElementById("realPwmDisp").textContent = realPwm;
+
+        const nowStr = new Date().toLocaleTimeString("vi-VN", { hour12: false });
+        appendChartData(rpmChart, nowStr, targetRpm, realRpm);
+        appendChartData(pwmChart, nowStr, targetPwm, realPwm);
+
+        const rsBadge = document.getElementById("rs485Badge");
+        if (d.rs485 === 1) {
+          rsBadge.textContent = "RS485: ONLINE";
+          rsBadge.className = "badge ok";
+        } else {
+          rsBadge.textContent = "RS485: OFFLINE";
+          rsBadge.className = "badge err";
+        }
+
+        document.getElementById("lastUpdate").textContent =
+          "Cập nhật lúc: " + new Date().toLocaleTimeString();
+      } catch (e) {
+        console.error(e);
+      }
+    });
+
+    function sendMotor(dir) {
+      currentDir = dir;
+      const val = parseInt(document.getElementById("ctrlSlider").value, 10);
+      if (dir === 0 || val === 0) {
+        currentDir = 0;
+        client.publish(TOPIC_CONTROL, "STOP");
+      } else {
+        const signedVal = dir * val;
+        client.publish(TOPIC_CONTROL, (uiMode === "PWM" ? "PWM:" : "RPM:") + signedVal);
+      }
+    }
+  </script>
+</body>
+
+</html>
